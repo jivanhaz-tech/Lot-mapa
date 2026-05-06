@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LÖT – Mapa de Predios Bogotá</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f0f0f; color: #fff; height: 100vh; display: flex; flex-direction: column; }
+
+    /* Header */
+    .header {
+      background: #111;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #2a2a2a;
+      z-index: 1000;
+    }
+    .header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: 2px; color: #fff; }
+    .header span { font-size: 0.75rem; color: #888; }
+
+    /* Controles de capas */
+    .layer-controls {
+      background: #1a1a1a;
+      padding: 8px 20px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      border-bottom: 1px solid #2a2a2a;
+      flex-wrap: wrap;
+    }
+    .layer-controls label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: #ccc;
+      cursor: pointer;
+    }
+    .layer-controls input[type=checkbox] { accent-color: #f5a623; }
+    .layer-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+    /* Contenedor principal */
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* Mapa */
+    #map { flex: 1; }
+
+    /* Panel lateral */
+    .panel {
+      width: 320px;
+      background: #111;
+      border-left: 1px solid #2a2a2a;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .panel-header {
+      padding: 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .panel-header h2 { font-size: 0.9rem; font-weight: 600; color: #f5a623; }
+    .panel-header p { font-size: 0.72rem; color: #666; margin-top: 4px; }
+
+    .panel-body { padding: 16px; flex: 1; }
+
+    /* Estado vacío */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: #444;
+      text-align: center;
+      gap: 10px;
+    }
+    .empty-state svg { opacity: 0.3; }
+    .empty-state p { font-size: 0.8rem; }
+
+    /* Tarjeta de predio */
+    .predio-card { display: none; }
+    .predio-card.visible { display: block; }
+
+    .field-group { margin-bottom: 14px; }
+    .field-label {
+      font-size: 0.68rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 3px;
+    }
+    .field-value {
+      font-size: 0.88rem;
+      color: #eee;
+      font-weight: 500;
+    }
+    .field-value.highlight {
+      color: #f5a623;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .divider { border: none; border-top: 1px solid #2a2a2a; margin: 14px 0; }
+
+    /* Badge de semáforo */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .badge-green { background: #1a3a1a; color: #4caf50; }
+    .badge-yellow { background: #3a3a1a; color: #f5a623; }
+    .badge-red { background: #3a1a1a; color: #f44336; }
+
+    /* Loading */
+    .loading {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      color: #888;
+      font-size: 0.8rem;
+      padding: 20px 0;
+    }
+    .loading.visible { display: flex; }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid #333;
+      border-top-color: #f5a623;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* CTA */
+    .cta-btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: #f5a623;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      margin-top: 16px;
+      letter-spacing: 0.5px;
+      transition: background 0.2s;
+    }
+    .cta-btn:hover { background: #e09510; }
+
+    /* Tooltip del mapa */
+    .leaflet-popup-content-wrapper {
+      background: #1a1a1a !important;
+      color: #eee !important;
+      border: 1px solid #333 !important;
+      border-radius: 8px !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+    }
+    .leaflet-popup-tip { background: #1a1a1a !important; }
+    .leaflet-popup-content { font-size: 0.8rem; line-height: 1.6; }
+
+    /* Leyenda */
+    .legend {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.72rem;
+      color: #aaa;
+      line-height: 1.8;
+    }
+    .legend-title { font-weight: 700; color: #f5a623; margin-bottom: 6px; font-size: 0.75rem; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .legend-color { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>LÖT</h1>
+  <span>Inteligencia de suelo · Bogotá D.C.</span>
+</div>
+
+<!-- Controles de capas -->
+<div class="layer-controls">
+  <span style="font-size:0.75rem;color:#666;font-weight:600;">CAPAS:</span>
+  <label>
+    <input type="checkbox" id="chk-predios" checked>
+    <span class="layer-dot" style="background:#f5a623;"></span> Predios / Lotes
+  </label>
+  <label>
+    <input type="checkbox" id="chk-upz">
+    <span class="layer-dot" style="background:#4fc3f7;"></span> UPZ
+  </label>
+  <label>
+    <input type="checkbox" id="chk-estrato">
+    <span class="layer-dot" style="background:#81c784;"></span> Estratificación
+  </label>
+  <label>
+    <input type="checkbox" id="chk-amenaza">
+    <span class="layer-dot" style="background:#e57373;"></span> Amenaza / Riesgo
+  </label>
+</div>
+
+<!-- Contenido principal -->
+<div class="main">
+  <div id="map"></div>
+
+  <!-- Panel lateral -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>📍 Información del Predio</h2>
+      <p>Haz clic sobre cualquier lote en el mapa</p>
+    </div>
+    <div class="panel-body">
+
+      <!-- Loading -->
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        Consultando IDECA...
+      </div>
+
+      <!-- Estado vacío -->
+      <div class="empty-state" id="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <p>Selecciona un predio<br>para ver su información catastral</p>
+      </div>
+
+      <!-- Tarjeta de datos del predio -->
+      <div class="predio-card" id="predio-card">
+
+        <div class="field-group">
+          <div class="field-label">Dirección</div>
+          <div class="field-value highlight" id="f-direccion">—</div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="field-group">
+          <div class="field-label">CHIP</div>
+          <div class="field-value" id="f-chip">—</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">Área del terreno</div>
+          <div class="field-value" id="f-area">—</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">Estrato socioeconómico</div>
+          <div class="field-value" id="f-estrato">—</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">UPZ</div>
+          <div class="field-value" id="f-upz">—</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">Uso del suelo</div>
+          <div class="field-value" id="f-uso">—</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">Avalúo catastral</div>
+          <div class="field-value highlight" id="f-avaluo">—</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">Localidad</div>
+          <div class="field-value" id="f-localidad">—</div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Leyenda de capas activas -->
+        <div class="legend">
+          <div class="legend-title">Capas activas</div>
+          <div class="legend-item"><div class="legend-color" style="background:#f5a623;opacity:0.7;"></div> Predios catastrales (IDECA)</div>
+          <div class="legend-item"><div class="legend-color" style="background:#4fc3f7;opacity:0.5;"></div> UPZ (SDP)</div>
+          <div class="legend-item"><div class="legend-color" style="background:#81c784;opacity:0.5;"></div> Estratificación</div>
+          <div class="legend-item"><div class="legend-color" style="background:#e57373;opacity:0.5;"></div> Amenaza / Riesgo</div>
+        </div>
+
+        <button class="cta-btn" onclick="activarDiagnostico()">
+          🔍 Activar diagnóstico LÖT completo
+        </button>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Inicializar mapa ──────────────────────────────────────────────
+  const map = L.map('map', { zoomControl: true }).setView([4.711, -74.0721], 14);
+
+  // Mapa base oscuro (CartoDB Dark - gratuito)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO',
+    subdomains: 'abcd',
+    maxZoom: 20
+  }).addTo(map);
+
+  // ── Capas WMS de IDECA (gratuitas, licencia abierta CC BY 4.0) ────
+  const capas = {
+    predios: L.tileLayer.wms(
+      'https://serviciosgis.catastrobogota.gov.co/arcgis/services/catastro/lote/MapServer/WMSServer',
+      { layers: '0', format: 'image/png', transparent: true, opacity: 0.55, attribution: '© IDECA' }
+    ),
+    upz: L.tileLayer.wms(
+      'https://serviciosgis.catastrobogota.gov.co/arcgis/services/catastro/upz/MapServer/WMSServer',
+      { layers: '0', format: 'image/png', transparent: true, opacity: 0.35, attribution: '© IDECA' }
+    ),
+    estrato: L.tileLayer.wms(
+      'https://serviciosgis.catastrobogota.gov.co/arcgis/services/catastro/estratificacion/MapServer/WMSServer',
+      { layers: '0', format: 'image/png', transparent: true, opacity: 0.35, attribution: '© IDECA' }
+    ),
+    amenaza: L.tileLayer.wms(
+      'https://serviciosgis.catastrobogota.gov.co/arcgis/services/malla_vial/amenaza/MapServer/WMSServer',
+      { layers: '0', format: 'image/png', transparent: true, opacity: 0.4, attribution: '© IDECA' }
+    )
+  };
+
+  // Activar capa de predios por defecto
+  capas.predios.addTo(map);
+
+  // ── Controles de capas ────────────────────────────────────────────
+  document.getElementById('chk-predios').addEventListener('change', e => {
+    e.target.checked ? capas.predios.addTo(map) : map.removeLayer(capas.predios);
+  });
+  document.getElementById('chk-upz').addEventListener('change', e => {
+    e.target.checked ? capas.upz.addTo(map) : map.removeLayer(capas.upz);
+  });
+  document.getElementById('chk-estrato').addEventListener('change', e => {
+    e.target.checked ? capas.estrato.addTo(map) : map.removeLayer(capas.estrato);
+  });
+  document.getElementById('chk-amenaza').addEventListener('change', e => {
+    e.target.checked ? capas.amenaza.addTo(map) : map.removeLayer(capas.amenaza);
+  });
+
+  // ── Clic en el mapa → consulta REST de IDECA ─────────────────────
+  let marcador = null;
+
+  map.on('click', function(e) {
+    const { lat, lng } = e.latlng;
+
+    // Mostrar loading
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('predio-card').classList.remove('visible');
+    document.getElementById('loading').classList.add('visible');
+
+    // Marcador en el mapa
+    if (marcador) map.removeLayer(marcador);
+    marcador = L.circleMarker([lat, lng], {
+      radius: 8, color: '#f5a623', fillColor: '#f5a623',
+      fillOpacity: 0.8, weight: 2
+    }).addTo(map);
+
+    // Consulta REST a IDECA (predios/lotes)
+    const url = `https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/catastro/lote/MapServer/3/query?` +
+      `geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326` +
+      `&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('loading').classList.remove('visible');
+
+        if (data.features && data.features.length > 0) {
+          const a = data.features[0].attributes;
+
+          // Formatear avalúo
+          const avaluo = a.AVALUO_CATASTRAL || a.AVALUO || a.VALOR_CATASTRAL;
+          const avaluoFmt = avaluo
+            ? '$ ' + Number(avaluo).toLocaleString('es-CO') + ' COP'
+            : 'No disponible';
+
+          // Área
+          const area = a.AREA_TERRENO || a.AREA || a.SHAPE_Area;
+          const areaFmt = area ? Number(area).toFixed(1) + ' m²' : 'No disponible';
+
+          // Estrato
+          const estrato = a.ESTRATO || a.ESTRATO_SOCIOECONOMICO;
+          const estratoFmt = estrato ? 'Estrato ' + estrato : 'No disponible';
+
+          // Poblar panel
+          document.getElementById('f-direccion').textContent  = a.DIRECCION || a.DIRECCION_PREDIO || 'No disponible';
+          document.getElementById('f-chip').textContent       = a.CHIP || a.CODIGO_CHIP || 'No disponible';
+          document.getElementById('f-area').textContent       = areaFmt;
+          document.getElementById('f-estrato').textContent    = estratoFmt;
+          document.getElementById('f-upz').textContent        = a.UPZ || a.NOMBRE_UPZ || a.COD_UPZ || 'No disponible';
+          document.getElementById('f-uso').textContent        = a.USO || a.USO_SUELO || a.DESTINO || 'No disponible';
+          document.getElementById('f-avaluo').textContent     = avaluoFmt;
+          document.getElementById('f-localidad').textContent  = a.LOCALIDAD || a.NOMBRE_LOCALIDAD || 'No disponible';
+
+          document.getElementById('predio-card').classList.add('visible');
+
+          // Popup en el mapa
+          L.popup({ className: 'lot-popup' })
+            .setLatLng([lat, lng])
+            .setContent(`
+              <b style="color:#f5a623">${a.DIRECCION || a.DIRECCION_PREDIO || 'Predio seleccionado'}</b><br>
+              CHIP: ${a.CHIP || '—'}<br>
+              Área: ${areaFmt}<br>
+              Estrato: ${estratoFmt}
+            `)
+            .openOn(map);
+
+        } else {
+          document.getElementById('empty-state').style.display = 'flex';
+          document.getElementById('empty-state').querySelector('p').textContent =
+            'No se encontró información catastral para este punto. Intenta hacer clic directamente sobre un lote.';
+        }
+      })
+      .catch(() => {
+        document.getElementById('loading').classList.remove('visible');
+        document.getElementById('empty-state').style.display = 'flex';
+        document.getElementById('empty-state').querySelector('p').textContent =
+          'Error al consultar IDECA. Verifica tu conexión e intenta de nuevo.';
+      });
+  });
+
+  // ── CTA Diagnóstico LÖT ───────────────────────────────────────────
+  function activarDiagnostico() {
+    const chip = document.getElementById('f-chip').textContent;
+    const dir  = document.getElementById('f-direccion').textContent;
+    alert(`🔍 Iniciando diagnóstico LÖT para:\n${dir}\nCHIP: ${chip}\n\n(Aquí conectas con el flujo de diagnóstico 4D de LÖT)`);
+  }
+</script>
+</body>
+</html>
